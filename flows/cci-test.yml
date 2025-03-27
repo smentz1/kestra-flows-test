@@ -1,0 +1,7 @@
+id: cci-test
+namespace: null
+
+tasks:
+  - id: hello
+    type: io.kestra.plugin.core.log.Log
+    message: Hello World! 🚀

@@ -1,5 +1,5 @@
 id: push_flows_to_git
-namespace: null
+namespace: system
 
 triggers:
   - id: webhook
@@ -8,14 +8,13 @@ triggers:
     
 tasks:
 
-
   - id: commit_and_push
     type: io.kestra.plugin.git.PushFlows
     username: smentz1
     password: "{{secret('GITHUB_ACCESS_TOKEN')}}"
     url: https://github.com/smentz1/kestra-flows-test.git
     branch: main
-    sourceNamespace: beymedias
-    gitDirectory: flows2
+    sourceNamespace: system
+    gitDirectory: flows
     commitMessage: "flows from kestra"
     dryRun: false

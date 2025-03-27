@@ -1,1 +1,15 @@
-
+jobs:
+  trigger-kestra-flow:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run:
+          name: Call Kestra Webhook
+          command: |
+            curl -X POST "https://kestra.rec.beymedias.com/api/v1/executions/webhook/system/push_flows_to_git/circleci" \
+              -H "Content-Type: application/json" \
+              -d '{
+                    "pipeline": "<< a07a29a4-c0bb-4e9b-b493-c925ddf1b591 >>",
+                    "branch": "<< main >>",
+                    "project": "<< smentz1 >>/<< kestra-flows-test >>"
+                  }'

@@ -1,0 +1,19 @@
+id: myflow
+namespace: null
+
+tasks:
+  - id: download_from_ftp
+    type: io.kestra.plugin.fs.ftp.Download
+    from: /Agefi_7H_2025-01-05.pdf
+    host: ftp.agefi.fr
+    logLevel: DEBUG
+    password: 2E4Z0y1msPIi
+    username: dsi
+  - id: upload_to_ftp2
+    type: io.kestra.plugin.fs.ftp.Upload
+    from: "{{ inputs.file }}"
+    host: ftp.agefi.fr
+    password: 2E4Z0y1msPIi
+    to: "/cfc/Agefi_7H_2025-01-03.pdf"
+    username: dsi
+disabled: true

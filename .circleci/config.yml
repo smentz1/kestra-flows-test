@@ -13,3 +13,8 @@ jobs:
                     "branch": "<< main >>",
                     "project": "<< smentz1 >>/<< kestra-flows-test >>"
                   }'
+workflows:
+  version: 2
+  trigger-kestra:
+    jobs:
+      - trigger-kestra-flow

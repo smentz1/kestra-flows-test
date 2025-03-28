@@ -15,13 +15,17 @@ jobs:
       - run:
           name: Deploy Kestra Flows with Basic Auth
           command: |
-            for file in flows/*.yml; do
-              echo "Deploying $file to Kestra..."
-              curl -X PUT https://kestra.rec.beymedias.com/api/v1/namespaces/system/flows/deploy-test-1 \
-                -u "$KESTRA_USER:$KESTRA_PASSWORD" \
-                -H "Content-Type: application/yaml" \
-                --data-binary @flows/deploy-test-1.yml
+           for file in flows/*.yml; do
+            ID=$(yq '.id' "$file")
+            NS=$(yq '.namespace' "$file")
+            echo "Deploying $file to Kestra ($NS / $ID)..."
+  
+            curl -X PUT "https://kestra.rec.beymedias.com/api/v1/namespaces/$NS/flows/$ID" \
+              -u "$KESTRA_USER:$KESTRA_PASSWORD" \
+              -H "Content-Type: application/yaml" \
+              --data-binary @"$file"
             done
+
 
 workflows:
   version: 2

@@ -1,5 +1,5 @@
 id: push_flows_to_git
-namespace: null
+namespace: system
 
 triggers:
   - id: webhook

@@ -1,6 +1,0 @@
-id: deploy-test-2
-namespace: beymedias
-tasks:
-  - id: hello
-    type: io.kestra.plugin.core.log.Log
-    message: Hello World 2! 🚀

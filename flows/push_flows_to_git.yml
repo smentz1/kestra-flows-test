@@ -8,7 +8,6 @@ triggers:
     
 tasks:
 
-
   - id: commit_and_push
     type: io.kestra.plugin.git.PushFlows
     username: smentz1

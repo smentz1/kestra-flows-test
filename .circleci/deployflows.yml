@@ -17,7 +17,7 @@ jobs:
           command: |
             for file in flows/*.yml; do
               echo "Deploying $file to Kestra..."
-              curl -X PUT https://kestra.rec.beymedias.com/api/v1/flows \
+              curl -X POST https://kestra.rec.beymedias.com/api/v1/flows \
                 -u "$KESTRA_USER:$KESTRA_PASSWORD" \
                 -H "Content-Type: application/yaml" \
                 --data-binary @"$file"

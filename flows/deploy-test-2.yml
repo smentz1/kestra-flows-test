@@ -1,6 +1,5 @@
 id: deploy-test-2
-namespace: null
-
+namespace: system
 tasks:
   - id: hello
     type: io.kestra.plugin.core.log.Log

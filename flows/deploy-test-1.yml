@@ -1,5 +1,5 @@
 id: deploy-test-1
-namespace: null
+namespace: system
 
 tasks:
   - id: hello

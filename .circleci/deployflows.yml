@@ -20,7 +20,7 @@ jobs:
               curl -X PUT https://kestra.rec.beymedias.com/api/v1/namespaces/system/flows/deploy-test-1 \
                 -u "$KESTRA_USER:$KESTRA_PASSWORD" \
                 -H "Content-Type: application/yaml" \
-                --data-binary @"$file"
+                --data-binary @flows/deploy-test-1.yml
             done
 
 workflows:

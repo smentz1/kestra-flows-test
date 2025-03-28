@@ -1,0 +1,33 @@
+version: 2.1
+
+jobs:
+  deploy_kestra_flow:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+
+      - run:
+          name: Install curl & jq
+          command: |
+            sudo apt-get update && sudo apt-get install -y curl jq
+
+      - run:
+          name: Deploy Kestra Flows with Basic Auth
+          command: |
+            for file in flows/*.yml; do
+              echo "Deploying $file to Kestra..."
+              curl -X PUT https://kestra.rec.beymedias.com/api/v1/flows \
+                -u "$KESTRA_USER:$KESTRA_PASSWORD" \
+                -H "Content-Type: application/yaml" \
+                --data-binary @"$file"
+            done
+
+workflows:
+  version: 2
+  deploy:
+    jobs:
+      - deploy_kestra_flow:
+          filters:
+            branches:
+              only: main

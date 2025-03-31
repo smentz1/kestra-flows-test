@@ -1,0 +1,11 @@
+{
+  "id": "deploy-test-1",
+  "namespace": "beymedias",
+  "tasks": [
+    {
+      "id": "hello",
+      "type": "io.kestra.plugin.core.log.Log",
+      "message": "Hello World! \ud83d\ude80"
+    }
+  ]
+}

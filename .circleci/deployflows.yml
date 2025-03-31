@@ -15,7 +15,7 @@ jobs:
       - run:
           name: Deploy Kestra Flow from GitHub
           command: |
-            curl -s https://raw.githubusercontent.com/smentz1/kestra-flows-test/main/flows/deploy-test-1.yml | \
+            curl -s https://raw.githubusercontent.com/smentz1/kestra-flows-test/main/flows/push_flows_to_git.yml | \
             curl -v -X POST \
               -u "${KESTRA_USER}:${KESTRA_PASS}" \
               -H "Content-Type: application/x-yaml" \

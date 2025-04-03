@@ -1,0 +1,161 @@
+id: PIANO_FETCH_REPORT
+namespace: null
+
+concurrency:
+  limit: 1
+
+inputs:
+  - id : site
+    type: SELECT
+    defaults: AGEFI
+    values:
+      - AGEFI
+      - OPINION
+
+  - id : type
+    type: SELECT
+    defaults: userExport
+    values:
+      - userExport
+      - transactionsReport
+      - accessReportExport
+      - subscriptionLog
+
+
+
+variables:
+  projectId: beymedias-raw
+  datasetId: piano
+  aid: "{{ inputs.site == \"AGEFI\" ? \"IwtAWGCBpe\" : \"vKGbNiYwpe\" }}"
+  api_token: "{{ inputs.site == \"AGEFI\" ? secret('PIANO_AGEFI_TOKEN') : secret('PIANO_OPINION_TOKEN') }}"
+  reportDyn: "{{ inputs.site | lower }}_{{ inputs.type | lower | replace({'export': '', 'report': ''})  }}"
+  reportSub: "subscription-log.csv" 
+  report: "{{ inputs.type == 'subscriptionLog' ? render(vars.reportSub) : render(vars.reportDyn) }}"
+  createEndPoint: "https://{{  inputs.type == 'subscriptionLog' ? 'reports-api.piano.io/rest/export/schedule/vx' : 'api-eu.piano.io/api/v3/publisher/export/create' }}"
+
+
+tasks:
+
+  - id: piano_get_report
+    type: io.kestra.plugin.core.http.Request
+    uri: https://api-eu.piano.io/api/v3/publisher/export/list?aid={{ render(vars.aid) }}&q={{ render(vars.report) }}
+    method: GET
+    headers:
+      api_token: "{{ render(vars.api_token) }}"
+      
+  - id: piano_missing_report
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.piano_get_report.body | jq('.exports') | first | length == 0 }}"
+    then: 
+      - id: piano_generate_report
+        type: io.kestra.plugin.core.http.Request
+        uri: "{{ render(vars.createEndPoint) }}/{{ inputs.type }}?aid={{ render(vars.aid) }}"
+        method: POST
+        formData:
+          api_token: "{{ render(vars.api_token) }}"
+          aid: "{{ render(vars.aid) }}"
+          export_name: "{{ render(vars.report) }}"
+          export_all_custom_fields: true
+          #date_from: "{{ inputs.type != 'userExport' ?  now() | dateAdd(-30, 'DAYS') | date('yyyy-MM-dd')  : '' }}"
+          date_from: "{{ inputs.type != 'userExport' ?  '2023-03-01'  : '' }}"
+          #date_to: "{{ inputs.type != 'userExport' ?  now() | date('yyyy-MM-dd')  : '' }}"
+          date_to: "{{ inputs.type != 'userExport' ?  '2030-01-01'  : '' }}"
+
+        headers:
+          Content-Type: application/x-www-form-urlencoded
+
+      - id: check_generate_result
+        type: io.kestra.plugin.core.execution.Fail
+        condition: "{{ outputs.piano_generate_report.body | jq('.code') | first == 400 }}"
+        errorMessage: "{{ outputs.piano_generate_report.body | jq('.validation_errors') | first }}"
+        
+      - id: get_new_export
+        type: io.kestra.plugin.core.debug.Return
+        format: "{{ outputs.piano_generate_report.body | jq('.export | {id: .export_id, status: .export_status, at: .export_completed}') | first  }}"
+        
+    else:
+      - id: get_export
+        type: io.kestra.plugin.core.debug.Return
+        format: "{{ outputs.piano_get_report.body  | jq('.exports|sort_by(.export_created)|reverse| map({id: .export_id, status: .export_status, at: .export_completed}) | first ') | first }}"
+
+  - id: export_info
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ outputs.get_new_export.value ?? outputs.get_export.value  }}"
+
+  - id: piano_old_report
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.export_info.value | jq('.status') | first == 'COMPLETED' and (now() | timestamp(timeZone='Europe/Paris')) - (outputs.export_info.value | jq('.at') | first ) > 2*60*60 }}"
+    then: 
+      - id: piano_refresh_report
+        type: io.kestra.plugin.core.http.Request
+        uri: https://api-eu.piano.io/api/v3/publisher/export/run?aid={{ render(vars.aid) }}&export_id={{ outputs.export_info.value | jq('.id') | first }}
+        method: GET
+        headers:
+          api_token: "{{ render(vars.api_token) }}"
+
+  - id: loop
+    type: io.kestra.plugin.core.flow.LoopUntil
+    condition: "{{ outputs.piano_info_report.value | jq('.status') | first == 'COMPLETED' }}"
+    checkFrequency:
+      maxDuration: "36000"
+      maxIterations: 1000
+      interval: "PT30S"
+    tasks:        
+      - id: piano_wait_report
+        type: io.kestra.plugin.core.http.Request
+        uri: https://api-eu.piano.io/api/v3/publisher/export/get?aid={{ render(vars.aid) }}&export_id={{ outputs.export_info.value | jq('.id') | first }}
+        method: GET
+        headers:
+          api_token: "{{ render(vars.api_token) }}"
+       
+      - id: piano_info_report
+        type: io.kestra.plugin.core.debug.Return
+        format: "{{ outputs.piano_wait_report.body  | jq('.export | {id: .export_id, status: .export_status, at: .export_completed, p: .export_percentage}') | first }}"
+
+      - id: piano_progress_report
+        type: io.kestra.plugin.core.debug.Return
+        format: "{{ outputs.piano_info_report.value | jq('.p') | first }}"
+
+  - id: piano_get_download_url
+    type: io.kestra.plugin.core.http.Request
+    uri: https://api-eu.piano.io/api/v3/publisher/export/download?aid={{ render(vars.aid) }}&export_id={{ outputs.export_info.value | jq('.id') | first }}
+    method: GET
+    headers:
+      api_token: "{{ render(vars.api_token) }}"
+
+  - id: piano_get_download
+    type: io.kestra.plugin.core.http.Download
+    uri: "{{ outputs.piano_get_download_url.body | jq('.data') | first }}"
+
+  - id: clean_files
+    description: fix column name
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./piano/csv_column.js"
+      main("{{ outputs.piano_get_download.uri }}","{{ render(vars.report) }}",",")
+
+  - id: import_in_bigquery
+    description: import *.csv in raw_* tables
+    type: io.kestra.plugin.scripts.node.Script
+    script: |
+      import main from "./piano/bigquery_raw.js"
+      main({{ outputs.clean_files.vars }}, {{ outputs.clean_files.outputFiles }})
+
+pluginDefaults:
+  - type: io.kestra.plugin.scripts.node.Script
+    values:
+        containerImage: node:slim
+        namespaceFiles:
+          enabled: true
+        beforeCommands:
+          - mkdir ./csv ./ref
+          - echo '{"type":"module"}' > ./package.json
+          - npm --silent i @kestra-io/libs
+          - npm --silent i @google-cloud/bigquery
+        env:
+          GCP_SERVICE_ACCOUNT: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+          projectId: '{{ vars.projectId }}'
+          datasetId: '{{ vars.datasetId }}'
+    

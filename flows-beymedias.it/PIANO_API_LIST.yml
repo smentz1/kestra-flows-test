@@ -1,0 +1,85 @@
+id: PIANO_API_LIST
+namespace: null
+
+inputs:
+  - id: site
+    type: SELECT
+    defaults: OPINION
+    values:
+      - AGEFI
+      - OPINION
+
+  - id: type
+    type: SELECT
+    defaults: /term/list
+    values:
+      - /term/list
+      - /resource/list
+
+variables:
+  projectId: beymedias-raw
+  datasetId: piano
+  aid: '{{ inputs.site == "AGEFI" ? "IwtAWGCBpe" : "vKGbNiYwpe" }}'
+  api_token: '{{ inputs.site == "AGEFI" ? secret(''PIANO_AGEFI_TOKEN'') : secret(''PIANO_OPINION_TOKEN'') }}'
+  endPoint: "https://api-eu.piano.io/api/v3/publisher{{ inputs.type }}"
+
+tasks:
+  - id: fetch_api_list
+    type: io.kestra.plugin.scripts.node.Script
+    containerImage: node:slim
+    env:
+      API_URI: "{{ render(vars.endPoint) }}?aid={{ render(vars.aid) }}"
+      API_TOKEN: "{{ render(vars.api_token) }}"
+    beforeCommands:
+      - echo '{"type":"module"}' > ./package.json
+      - npm --silent i @kestra-io/libs
+    script: |
+      import Kestra from "@kestra-io/libs";
+
+      async function main() {
+        const results = [];
+        let offset = 0, total = 0, limit = 100;
+
+        while (offset == 0 || total > offset ) {
+          console.log(`${process.env.API_URI}&limit=${limit}&offset=${offset}`)
+          const res = await fetch(`${process.env.API_URI}&limit=${limit}&offset=${offset}`, {
+            headers: { api_token: process.env.API_TOKEN }
+          });
+          const data = await res.json();
+
+          if (data.code !== 0) {
+            console.error(data.message);
+            break;
+          }
+
+          const name = Object.keys(data)
+            .filter(k => !['code', 'ts', 'limit', 'offset', 'total', 'count'].includes(k))
+            .at(0);
+
+          results.push(...data[name]);
+          offset += limit;
+          total = data.total;
+        }
+
+        Kestra.outputs({ results: results.map(r=>JSON.stringify(r)).join('\n') })
+      }
+      main()
+
+  - id: save_output
+    type: io.kestra.plugin.core.storage.Write
+    content: "{{ outputs.fetch_api_list.vars.results}}"
+    extension: .json
+
+  - id: update_bigquery
+    type: io.kestra.plugin.gcp.bigquery.Load
+    autodetect: true
+    projectId: "{{ vars.projectId }}"
+    
+    destinationTable: '{{ vars.datasetId }}.raw_{{ inputs.site | lower }}{{ inputs.type | replace({"/": "_"})  }}'
+    format: JSON
+    writeDisposition: WRITE_TRUNCATE
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    location: 'eu'
+    from: '{{ outputs.save_output.uri}}'
+
+

@@ -1,0 +1,76 @@
+id: MAGELLAN_TO_BIGQUERY
+namespace: null
+inputs:
+  - id: date
+    type: STRING
+    defaults: "20250205"
+concurrency:
+  limit: 1 
+
+variables:
+  projectId: beymedias-raw
+  datasetId: magellan
+
+
+tasks:
+      
+  - id: list_FTP_files
+    type: io.kestra.plugin.fs.ftp.List
+    from: /CRM
+    regExp: "^/CRM/MAG635P_INTCBS_{{ inputs.date }}_[a-zA-Z_]*.txt$"
+
+  - id: foreach_FTP_files
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.list_FTP_files.files | jq('.[].path') }}"
+    tasks:
+      - id: download_FTP_File
+        type: io.kestra.plugin.fs.ftp.Download
+        from: "{{ taskrun.value }}"
+
+  - id: split_files
+    description: split reference and numero into multiples csv
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./magellan/split_csv.js"
+      main({{ outputs.download_FTP_File }})
+
+  - id: file_cleanup
+    description: remove blank lines
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./magellan/clean_csv.js"
+      main({{ outputs.split_files.vars }}, {{ outputs.split_files.outputFiles }})
+      
+  - id: import_in_bigquery
+    description: import *.csv in raw_* tables
+    type: io.kestra.plugin.scripts.node.Script
+    script: |
+      import main from "./magellan/bigquery_raw.js"
+      main({{ outputs.file_cleanup.vars }}, {{ outputs.file_cleanup.outputFiles }})
+   
+pluginDefaults:
+  - type: io.kestra.plugin.fs.ftp
+    values:
+        host: ftp.agefi.fr
+        port: "21"
+        from: /CRM
+        username: "{{ secret('AGEFI_FTP_USER') }}"
+        password: "{{ secret('AGEFI_FTP_pwd') }}"
+  - type: io.kestra.plugin.scripts.node.Script
+    values:
+        containerImage: node:slim
+        namespaceFiles:
+          enabled: true
+        beforeCommands:
+          - mkdir ./csv ./ref
+          - echo '{"type":"module"}' > ./package.json
+          - npm --silent i @kestra-io/libs
+          - npm --silent i @google-cloud/bigquery
+        env:
+          GCP_SERVICE_ACCOUNT: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+          projectId: '{{ vars.projectId }}'
+          datasetId: '{{ vars.datasetId }}'

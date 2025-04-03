@@ -1,0 +1,136 @@
+id: EVENTMAKER_GUESTS
+namespace: null
+
+# https://app.eventmaker.io/swagger/index.html
+# https://developers.eventmaker.io/rest-apis/eventmaker-rest-api/guests
+
+inputs:
+  - id: eventId
+    defaults: 6683cdf577495d16361d1ee3
+    type: STRING
+    displayName: "EventMaker event id"
+
+variables:
+  projectId: beymedias-raw
+  datasetId: eventmaker
+  endpoint: https://app.eventmaker.io/api/v1
+  accountId: 57e64a4b2667eb02c300375e
+
+tasks:
+  - id: fetch_guest_categories
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/events/{{inputs.eventId}}/guest_categories.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}"
+  - id: guest_categories
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ outputs.fetch_guest_categories.body | jq('.[] | {id:._id, name}') }}"
+  - id: fetch_guests
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/events/{{inputs.eventId}}/guests.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}&per_page=2000&guest_metadata=true"
+  - id: save_output_guest
+    type: io.kestra.plugin.core.storage.Write
+    content: "{{ 
+      [outputs.fetch_guests.body,outputs.guest_categories.value]
+      | jq('. | {guests: .[0]|fromjson, categories: .[1] |fromjson }') | first
+      | jq('.categories as $categories | .guests[] | . as $guest | {
+          _id
+          , category: $categories  | map(select(.id=$guest.guest_category_id))| first | .name
+          ,event_id
+          ,contact_id
+          ,account_campaign_optin
+          ,company_name
+          ,email
+          ,address
+          ,event_campaign_optin
+          ,gdpr_event_campaign_optin
+          ,first_name
+          ,last_name
+          ,phone_number
+          ,position
+          ,registered_at: .registered_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end
+          ,showed_up
+          ,rsvp_status
+          ,status
+          ,created_at: .created_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end
+          ,deleted_at: .deleted_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end
+          ,updated_at: .updated_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end
+          ,guest_metadata: .guest_metadata
+          ,utm_campaign
+          ,utm_medium
+          ,utm_source
+        } | @json ') | join('\n') }}"
+    extension: .jsonl
+  - id: if_not_empty
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.fetch_guests.body | jq('.[]') | length  }}"
+    then:
+      - id: update_bigquery
+        type: io.kestra.plugin.gcp.bigquery.Load
+        autodetect: false
+        schema:
+          fields:
+            - name: _id
+              type: STRING
+            - name: category
+              type: STRING
+
+            - name: guest_metadata
+              type: STRUCT
+              mode: REPEATED
+              fields:
+                - name: value
+                  type: STRING
+                - name: name
+                  type: STRING
+
+            - name: address
+              type: STRING
+            - name: event_id
+              type: STRING
+            - name: contact_id
+              type: STRING
+            - name: account_campaign_optin
+              type: BOOL
+            - name: company_name
+              type: STRING
+            - name: email
+              type: STRING
+            - name: event_campaign_optin
+              type: BOOL
+            - name: gdpr_event_campaign_optin
+              type: BOOL
+            - name: first_name
+              type: STRING
+            - name: last_name
+              type: STRING
+            - name: phone_number
+              type: STRING
+            - name: position
+              type: STRING
+            - name: registered_at
+              type: DATETIME
+            - name: showed_up
+              type: BOOL
+            - name: rsvp_status
+              type: STRING
+            - name: status
+              type: STRING
+            - name: created_at
+              type: DATETIME
+            - name: deleted_at
+              type: DATETIME
+            - name: updated_at
+              type: DATETIME
+            - name: utm_campaign
+              type: STRING
+            - name: utm_medium
+              type: STRING
+            - name: utm_source
+              type: STRING
+
+        destinationTable: '{{ vars.datasetId }}.raw_guest_test'
+        format: JSON
+        writeDisposition: WRITE_APPEND
+        location: 'eu'
+        projectId: '{{ vars.projectId }}'
+        serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+        from: '{{ outputs.save_output_guest.uri}}'

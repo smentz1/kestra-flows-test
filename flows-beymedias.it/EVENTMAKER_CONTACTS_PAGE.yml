@@ -1,0 +1,55 @@
+id: EVENTMAKER_CONTACTS_PAGE
+namespace: null
+
+inputs:
+  - id: page
+    defaults: 1
+    type: INT
+
+variables:
+  projectId: beymedias-raw
+  datasetId: eventmaker
+  endpoint: https://app.eventmaker.io/api/v1
+  accountId: 57e64a4b2667eb02c300375e
+  pageSize: 1000
+
+tasks:
+  - id: fetch_metadata
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/accounts/{{ vars.accountId}}/contact_fields.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}"
+    
+  - id: metadata
+    type: io.kestra.plugin.core.output.OutputValues
+    values: 
+      default: "{{ outputs.fetch_metadata.body | jq('.| map({key: .key, value:\"\"})  | from_entries')  }}"
+
+  - id: fetch_contact
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/accounts/{{ vars.accountId}}/contacts.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}&per_page={{ vars.pageSize }}&page={{ inputs.page }}"
+
+  - id: save_contact_output
+    type: io.kestra.plugin.core.storage.Write
+    content: "{{ 
+      [ outputs.metadata.values.default, outputs.fetch_contact.body ] 
+        | jq('. | {meta: .[0]|fromjson, d: .[1] |fromjson }') | first
+        | jq('.meta[0] as $meta | .d[] | {
+          _id 
+          , created_at: .created_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end 
+          , updated_at: .updated_at | if .==null then null else \"\\(.[0:10]) \\(.[11:19])\" end 
+          } + ($meta + (.guest_metadata | map({key: .name, value}) | from_entries) )
+          |@json')
+      | join('\n')
+      }}"
+    extension: .jsonl
+  - id: import_bigquery_contact
+    type: io.kestra.plugin.gcp.bigquery.Load
+    autodetect: false
+    schema:
+      fields: [{"name":"address_billing","type":"STRING"},{"name":"billing_country","type":"STRING"},{"name":"city_billing","type":"STRING"},{"name":"civility","type":"STRING"},{"name":"company_name_billing","type":"STRING"},{"name":"zip_code_billing","type":"STRING"},{"name":"autre_secteur_d_activit_","type":"STRING"},{"name":"code_postal","type":"STRING"},{"name":"_id","type":"STRING"},{"name":"created_at","type":"DATETIME"},{"name":"updated_at","type":"DATETIME"}]
+    destinationTable: '{{ vars.datasetId }}.raw_contact'
+    format: JSON
+    writeDisposition: WRITE_APPEND
+    location: 'eu'
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    from: '{{ outputs.save_contact_output.uri}}'

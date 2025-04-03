@@ -1,5 +1,5 @@
 id: push_flows_to_git
-namespace: null
+namespace: beymedias
 
 triggers:
   - id: webhook
@@ -15,7 +15,7 @@ tasks:
     password: "{{secret('GITHUB_ACCESS_TOKEN')}}"
     url: https://github.com/smentz1/kestra-flows-test.git
     branch: main
-    sourceNamespace: tutorial
+    sourceNamespace: beymedias.it
     gitDirectory: flows
     commitMessage: "flows from kestra"
     dryRun: false

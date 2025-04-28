@@ -1,0 +1,90 @@
+id: MAGELLAN_TO_BIGQUERY
+namespace: null
+
+variables:
+  projectId: beymedias-raw
+  datasetId: magellan
+
+
+tasks:
+  - id: next_import
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: search next date to sync
+    fetch: true
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    location: 'europe-west9'
+    sql: |
+      SELECT 
+        CASE 
+          WHEN EXTRACT(DAYOFWEEK FROM DATE_ADD(CURRENT_DATE() , INTERVAL -1 DAY)) = 7 THEN NULL
+          WHEN EXTRACT(DAYOFWEEK FROM DATE_ADD(CURRENT_DATE() , INTERVAL -1 DAY)) = 6 THEN NULL
+          ELSE FORMAT_DATE('%Y%m%d',DATE_ADD(CURRENT_DATE() , INTERVAL -1 DAY))
+        END as d;
+        
+  - id: json_next_import
+    type: io.kestra.plugin.core.debug.Return
+    description: format bigquery result as JSON string
+    allowFailure: true
+    format: "{{ outputs.next_import.rows[0].d  }}"
+
+  - id: list_FTP_files
+    type: io.kestra.plugin.fs.ftp.List
+    from: /CRM
+    regExp: "^/CRM/MAG635P_INTCBS_{{ outputs.json_next_import.value }}_[a-zA-Z_]*.txt$"
+
+  - id: foreach_FTP_files
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.list_FTP_files.files | jq('.[].path') }}"
+    tasks:
+      - id: download_FTP_File
+        type: io.kestra.plugin.fs.ftp.Download
+        from: "{{ taskrun.value }}"
+
+  - id: split_files
+    description: split reference and numero into multiples csv
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./magellan/split_csv.js"
+      main({{ outputs.download_FTP_File }})
+
+  - id: file_cleanup
+    description: remove blank lines
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./magellan/clean_csv.js"
+      main({{ outputs.split_files.vars }}, {{ outputs.split_files.outputFiles }})
+      
+  - id: import_in_bigquery
+    description: import *.csv in raw_* tables
+    type: io.kestra.plugin.scripts.node.Script
+    script: |
+      import main from "./magellan/bigquery_raw.js"
+      main({{ outputs.file_cleanup.vars }}, {{ outputs.file_cleanup.outputFiles }})
+   
+pluginDefaults:
+  - type: io.kestra.plugin.fs.ftp
+    values:
+        host: ftp.agefi.fr
+        port: "21"
+        from: /CRM
+        username: "{{ secret('AGEFI_FTP_USER') }}"
+        password: "{{ secret('AGEFI_FTP_pwd') }}"
+  - type: io.kestra.plugin.scripts.node.Script
+    values:
+        containerImage: node:slim
+        namespaceFiles:
+          enabled: true
+        beforeCommands:
+          - mkdir ./csv ./ref
+          - echo '{"type":"module"}' > ./package.json
+          - npm --silent i @kestra-io/libs
+          - npm --silent i @google-cloud/bigquery
+        env:
+          GCP_SERVICE_ACCOUNT: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+          projectId: '{{ vars.projectId }}'
+          datasetId: '{{ vars.datasetId }}'

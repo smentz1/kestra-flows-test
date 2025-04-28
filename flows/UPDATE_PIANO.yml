@@ -1,0 +1,108 @@
+id: UPDATE_PIANO
+namespace: null
+
+tasks:
+  - id: all
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: pianoReport_opinion
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoReport_opinion_user
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: OPINION
+              type: userExport
+          - id: pianoReport_opinion_transactions
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: OPINION
+              type: transactionsReport
+          - id: pianoReport_opinion_access
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: OPINION
+              type: accessReportExport
+          - id: pianoReport_opinion_subscription
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: OPINION
+              type: subscriptionLog
+      - id: pianoReport_agefi
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoReport_agefi_user
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: userExport
+          - id: pianoReport_agefi_transactions
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: transactionsReport
+          - id: pianoReport_agefi_access
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: accessReportExport
+          - id: pianoReport_agefi_subscription
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: subscriptionLog
+      - id: pianoApi_opinion
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoApi_opinion_term
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: OPINION
+              type: /term/list
+          - id: pianoApi_opinion_ressource
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: OPINION
+              type: /resource/list
+      - id: pianoApi_agefi
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoApi_agefi_term
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: AGEFI
+              type: /term/list
+          - id: pianoApi_agefi_ressource
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: AGEFI
+              type: /resource/list
+      - id: pianoOffer_beymedias
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace:  null
+        flowId: BEYMEDIAS_PIANO_OFFER
+        

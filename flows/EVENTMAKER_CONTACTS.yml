@@ -1,0 +1,52 @@
+id: EVENTMAKER_CONTACTS
+namespace: null
+
+
+inputs:
+  - id: updated_since
+    defaults: "1"
+    type: STRING
+    displayName: "seconds since epoch"
+
+variables:
+  projectId: beymedias-raw
+  datasetId: eventmaker
+  endpoint: https://app.eventmaker.io/api/v1
+  accountId: 57e64a4b2667eb02c300375e
+  pageSize: 1000
+
+tasks:
+  - id: drop_bigquery_contact
+    type: io.kestra.plugin.gcp.bigquery.Query
+    location: 'europe-west9'
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    sql: |
+        BEGIN
+          DELETE FROM `{{ vars.datasetId }}.raw_contact` 
+            WHERE CAST(updated_at as TIMESTAMP) >= TIMESTAMP_SECONDS({{ inputs.updated_since }});
+          EXCEPTION WHEN ERROR THEN SELECT "no table";
+        END
+
+    
+  - id: fetch_contact_count
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/accounts/{{ vars.accountId}}/contacts.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}&per_page=1&page=1&since={{ inputs.updated_since }}"
+  
+  - id: create_fetch_range
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ outputs.fetch_contact_count.headers.totalcount | first | jq('[range(0;.+1000;1000)] | map((./1000)+1)') | first }}"
+  
+  - id: fetch_range
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.create_fetch_range.value }}"
+    concurrencyLimit: 1
+    tasks:
+      - id: contact_page
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: null
+        flowId: EVENTMAKER_CONTACTS_PAGE
+        inputs: 
+          page: "{{taskrun.value}}"
+          updated_since: "{{inputs.updated_since}}"
+

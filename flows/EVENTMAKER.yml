@@ -1,0 +1,106 @@
+id: EVENTMAKER
+namespace: null
+
+# https://app.eventmaker.io/swagger/index.html
+# https://developers.eventmaker.io/rest-apis/eventmaker-rest-api/guests
+
+#inputs:
+#  - id: updated_since
+#    defaults: "1"
+#    type: STRING
+#    displayName: "seconds since epoch"
+
+variables:
+  projectId: beymedias-raw
+  datasetId: eventmaker
+  endpoint: https://app.eventmaker.io/api/v1
+  accountId: 57e64a4b2667eb02c300375e
+  pageSize: 2000
+  #pageSize: 5
+
+tasks:
+
+  - id: last_import
+    type: io.kestra.plugin.gcp.bigquery.Query
+    location: 'europe-west9'
+    fetch: true
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    sql: |
+        BEGIN
+          WITH update as (
+            SELECT MAX(updated_at) as updated_at FROM `beymedias-raw.eventmaker.raw_contact`
+            UNION ALL SELECT MAX(updated_at) as updated_at FROM  `beymedias-raw.eventmaker.raw_guest`
+          ) select FORMAT_DATETIME("%s", MAX(updated_at)) as updated_since  FROM update;
+          EXCEPTION WHEN ERROR THEN SELECT "1" as updated_since;
+        END
+  - id: updated_since
+    type: io.kestra.plugin.core.debug.Return
+    format: "{{ outputs.last_import.rows[0].updated_since }}"
+
+
+  - id: fetch_events
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ vars.endpoint }}/events.json?auth_token={{ secret('EVENTMAKER_API_KEY') }}&per_page={{ vars.pageSize }}"
+
+  - id: save_output
+    type: io.kestra.plugin.core.storage.Write
+    content: "{{ outputs.fetch_events.body 
+      | jq('.[] | {
+        _id
+        , title
+        , description
+        , organizer
+        , start_date: .start_date | if .==null then null else \"\\(.[0:10])T\\(.[11:19])\" end 
+        , end_date: .end_date | if .==null then null else \"\\(.[0:10])T\\(.[11:19])\" end 
+        } | @json ') 
+      | join('\n') }}"
+    extension: .jsonl
+
+  - id: import_bigquery_event
+    disabled: false
+    type: io.kestra.plugin.gcp.bigquery.Load
+    autodetect: true
+    destinationTable: '{{ vars.datasetId }}.raw_event'
+    format: JSON
+    writeDisposition: WRITE_TRUNCATE
+    location: 'eu'
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    from: '{{ outputs.save_output.uri}}'
+
+  - id: truncate_bigquery_guest
+    disabled: false
+    type: io.kestra.plugin.gcp.bigquery.Query
+    location: 'europe-west9'
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    sql: |
+        BEGIN
+          DELETE FROM `{{ vars.datasetId }}.raw_guest` 
+          WHERE CAST(updated_at as TIMESTAMP) >= TIMESTAMP_SECONDS({{ outputs.updated_since.value }});
+          EXCEPTION WHEN ERROR THEN SELECT "no table";
+        END
+        
+  - id: fetch_event_guests
+    disabled: false
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.fetch_events.body | jq('.[]._id') }}" 
+    concurrencyLimit: 1
+    tasks:
+      - id: save_event_guests
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: null
+        flowId: EVENTMAKER_GUESTS
+        wait: true 
+        inputs:
+          eventId: "{{ taskrun.value }}"
+          updated_since: "{{ outputs.updated_since.value }}"
+
+  - id: save_contacts
+    disabled: false
+    type: io.kestra.plugin.core.flow.Subflow
+    namespace: null
+    flowId: EVENTMAKER_CONTACTS
+    inputs:
+      updated_since: "{{ outputs.updated_since.value }}"

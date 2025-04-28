@@ -1,0 +1,104 @@
+id: LOGGIA_SYNC_BIGQUERY
+namespace: null
+
+concurrency:
+  limit: 1
+
+variables:
+  projectId: beymedias-raw
+  datasetId: loggia
+
+tasks:
+  - id: last_import
+    type: io.kestra.plugin.gcp.bigquery.Query
+    description: search next date to sync
+    fetch: true
+    sql: |
+      {{ read('loggia/bigquery_next_import.sql') }}
+  - id: json_last_import
+    type: io.kestra.plugin.core.debug.Return
+    description: format bigquery result as JSON string
+    format: |
+     {
+       "date": "{{ outputs.last_import.rows[0].date }}",
+       "type": "{{ outputs.last_import.rows[0].type }}"
+     }
+    # format: |
+    #   {"date": "2025-02-12", "type":"daily"}
+
+  - id: Check_SFTP_MRK
+    type: io.kestra.plugin.fs.sftp.Download    
+    from: "/CRM/BEY_CRM{{ fromJson(outputs.json_last_import.value).type == 'daily' ? 'Q' : 'H' }}_{{ fromJson(outputs.json_last_import.value).date | replace({'-': ''}) }}-MRK.TXT"
+    
+  - id: list_SFTP_files
+    type: io.kestra.plugin.fs.sftp.List
+    from: "/CRM"
+    regExp: "^/CRM/BEY_CRM{{ fromJson(outputs.json_last_import.value).type == 'daily' ? 'Q' : 'H' }}_([^_]+)_{{ fromJson(outputs.json_last_import.value).date | replace({'-': ''}) }}.*"
+  - id: foreach_SFTP_files
+    type: io.kestra.plugin.core.flow.ForEach
+    values: "{{ outputs.list_SFTP_files.files | jq('.[].path') }}"
+    tasks:
+      - id: download_SFTP_File
+        type: io.kestra.plugin.fs.sftp.Download
+        from: "{{ taskrun.value }}"
+
+  - id: clean_files
+    description: fix encoding
+    type: io.kestra.plugin.scripts.node.Script
+    outputFiles:
+      - csv/**
+    script: |
+      import main from "./loggia/encoding_csv.js"
+      main({{ outputs.download_SFTP_File }})
+
+  - id: import_in_bigquery
+    description: import *.csv in raw_* tables
+    type: io.kestra.plugin.scripts.node.Script
+    script: |
+      import main from "./loggia/bigquery_raw.js"
+      main('{{ fromJson(outputs.json_last_import.value).type }}', {{ outputs.clean_files.vars }}, {{ outputs.clean_files.outputFiles }})
+  
+  - id: only_if_daily
+    type: io.kestra.plugin.core.flow.If
+    condition: '{{ fromJson(outputs.json_last_import.value).type == "daily" }}'
+    then:
+      - id: merge_daily_in_bigquery
+        description: import daily tables on full
+        type: io.kestra.plugin.scripts.node.Script
+        script: |
+          import main from "./loggia/bigquery_merge.js"
+          main()
+  
+  - id: update_last_import
+    type: io.kestra.plugin.gcp.bigquery.Query
+    sql: |
+      INSERT INTO `{{ vars.projectId }}.{{ vars.datasetId}}.log_import` (date, daily)
+      VALUES ('{{ fromJson(outputs.json_last_import.value).date }}',{{ fromJson(outputs.json_last_import.value).type == 'daily' ? true : false }});
+
+      
+pluginDefaults:
+  - type: io.kestra.plugin.fs.sftp
+    values:
+      host: sftp02.groupe-gli.com
+      port: "2222"
+      username: sftpclt-cl57bey
+      password: "{{ secret('SFTP_GLI_PWD') }}"
+  - type: io.kestra.plugin.gcp.bigquery
+    values:
+      projectId: '{{ vars.projectId }}'
+      serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+      location: 'europe-west9'
+  - type: io.kestra.plugin.scripts.node.Script
+    values:
+      containerImage: node:slim
+      namespaceFiles:
+        enabled: true
+      beforeCommands:
+        - mkdir ./csv
+        - echo '{"type":"module"}' > ./package.json
+        - npm --silent i @kestra-io/libs
+        - npm --silent i @google-cloud/bigquery
+      env:
+        GCP_SERVICE_ACCOUNT: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+        projectId: '{{ vars.projectId }}'
+        datasetId: '{{ vars.datasetId }}'

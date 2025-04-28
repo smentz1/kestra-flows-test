@@ -1,0 +1,86 @@
+id: "PIANO_TERMS_RESOURCES"
+namespace: null
+
+inputs:
+  - id: site
+    type: SELECT
+    defaults: OPINION
+    values:
+      - AGEFI
+      - OPINION
+
+variables:
+  projectId: beymedias-raw
+  datasetId: piano
+  aid: '{{ inputs.site == "AGEFI" ? "IwtAWGCBpe" : "vKGbNiYwpe" }}'
+  api_token: '{{ inputs.site == "AGEFI" ? secret(''PIANO_AGEFI_TOKEN'') : secret(''PIANO_OPINION_TOKEN'') }}'
+
+tasks:
+  - id: fetch_api
+    type: io.kestra.plugin.core.flow.Sequential
+    description: Update terms and resources tables
+    tasks:
+      - id: fetch_term_list
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: null
+        flowId: PIANO_API_LIST
+        wait: true
+        transmitFailed: true
+        inputs: 
+          site: "{{ inputs.site }}"
+          type: /term/list
+      - id: fetch_resource_list
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace: null
+        flowId: PIANO_API_LIST
+        wait: true
+        transmitFailed: true
+        inputs: 
+          site: "{{ inputs.site }}"
+          type: /resource/list
+
+  - id: bundle_resouces
+    description: fetch bundle resources
+    type: io.kestra.plugin.gcp.bigquery.Query
+    fetch: true
+    sql: |
+      SELECT rid FROM `{{ vars.datasetId }}`.`raw_{{ inputs.site | lower }}_resource_list` WHERE `type` = "bundle"
+      
+  - id: each
+    type: io.kestra.plugin.core.flow.ForEach
+    description: search bundle details for each resources
+    values: "{{ outputs.bundle_resouces.rows }}"
+    concurrencyLimit: 5
+    tasks:
+      - id: fetch_bundle_detail
+        type: io.kestra.plugin.core.http.Request
+        uri: "https://api-eu.piano.io/api/v3/publisher/resource/bundle/members?aid={{ render(vars.aid) }}&rid={{ taskrun.value | jq('.rid') | first }}"
+        method: GET
+        headers:
+          api_token: "{{ render(vars.api_token) }}"
+
+  - id: have_bundle
+    type: io.kestra.plugin.core.flow.If
+    condition: "{{ outputs.bundle_resouces.size > 0}}"
+    then:
+    - id: to_file
+      description: dump results as JSONL
+      type: io.kestra.plugin.core.storage.Write
+      content: "{{ outputs.fetch_bundle_detail | jq('to_entries | map({rid:.key|fromjson|.rid, resources: .value.body|fromjson|.resources|map(.rid)}) | .[] | @json') | join('\n') }}"
+      extension: .json
+
+    - id: update_bigquery
+      type: io.kestra.plugin.gcp.bigquery.Load
+      autodetect: true
+      destinationTable: '{{ vars.datasetId }}.raw_{{ inputs.site | lower }}_resource_bundle'
+      format: JSON
+      writeDisposition: WRITE_TRUNCATE
+      location: 'eu'
+      from: '{{ outputs.to_file.uri}}'
+
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp.bigquery
+    values:
+      projectId: '{{ vars.projectId }}'
+      serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'

@@ -1,0 +1,47 @@
+id: BEYMEDIAS_PIANO_OFFER
+namespace: null
+
+description: fetch la table de liaison entre piano terms et Loggia.Offre
+
+variables:
+  projectId: beymedias-raw
+  datasetId: piano
+
+tasks:
+  - id: fetch_api_offres
+    type: io.kestra.plugin.core.http.Request
+    uri: https://api.beymedias.fr/lopinion/offer
+    headers:
+      authorization: "Bearer {{ secret('BEYMEDIAS_API') }}"
+  - id: to_file
+    description: dump results as JSONL
+    type: io.kestra.plugin.core.storage.Write
+    content: "
+      {{ 
+        outputs.fetch_api_offres.body | jq('
+          .[]
+          | . as $parent 
+          | .loggiaCodes[]
+          | . as $rid
+          | {
+              pianoTermId: $parent.pianoTermId, 
+              pianoResourceId: $parent.pianoResourceId,
+              loggiaCodeOffre: $rid,
+              vad: $parent.vad,
+              periodeIndex: $parent.loggiaCodes | index($rid)
+            }
+          | @json 
+        ') | join('\n')
+      }}"
+    extension: .jsonl
+    
+  - id: update_bigquery
+    type: io.kestra.plugin.gcp.bigquery.Load
+    autodetect: true
+    destinationTable: '{{ vars.datasetId }}.raw_bey_terms_piano_loggia'
+    format: JSON
+    writeDisposition: WRITE_TRUNCATE
+    location: 'eu'
+    projectId: '{{ vars.projectId }}'
+    serviceAccount: '{{ secret("GCP_SERVICE_ACCOUNT") }}'
+    from: '{{ outputs.to_file.uri}}'

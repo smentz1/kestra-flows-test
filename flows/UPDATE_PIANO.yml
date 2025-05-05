@@ -8,6 +8,10 @@ tasks:
       - id: pianoReport_opinion
         type: io.kestra.plugin.core.flow.Sequential
         tasks:
+          - id: monitoring_report_start
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/4dbfacf5-5501-449c-a685-04a37c4bddaf/start
+            method: GET
           - id: pianoReport_opinion_user
             type: io.kestra.plugin.core.flow.Subflow
             namespace:  null
@@ -36,9 +40,17 @@ tasks:
             inputs:
               site: OPINION
               type: subscriptionLog
+          - id: monitoring_report_end
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/4dbfacf5-5501-449c-a685-04a37c4bddaf
+            method: GET
       - id: pianoReport_agefi
         type: io.kestra.plugin.core.flow.Sequential
         tasks:
+          - id: monitoring_report_lop_start
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/88d17654-8be3-46b0-9ae2-f6f0682a3348/start
+            method: GET
           - id: pianoReport_agefi_user
             type: io.kestra.plugin.core.flow.Subflow
             namespace:  null
@@ -67,9 +79,17 @@ tasks:
             inputs:
               site: AGEFI
               type: subscriptionLog
+          - id: monitoring_report_lop_end
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/88d17654-8be3-46b0-9ae2-f6f0682a3348
+            method: GET              
       - id: pianoApi_opinion
         type: io.kestra.plugin.core.flow.Sequential
         tasks:
+          - id: monitoring_api_lop_start
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/4c35a273-73ad-4211-97b0-b136d46b146d/start
+            method: GET
           - id: pianoApi_opinion_term
             type: io.kestra.plugin.core.flow.Subflow
             namespace:  null
@@ -84,9 +104,17 @@ tasks:
             inputs:
               site: OPINION
               type: /resource/list
+          - id: monitoring_api_lop_end
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/4c35a273-73ad-4211-97b0-b136d46b146d
+            method: GET
       - id: pianoApi_agefi
         type: io.kestra.plugin.core.flow.Sequential
         tasks:
+          - id: monitoring_api_ag_start
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/a9fefc0c-6a89-45dc-8a3f-6f9dbf2e73c3/start
+            method: GET
           - id: pianoApi_agefi_term
             type: io.kestra.plugin.core.flow.Subflow
             namespace:  null
@@ -101,8 +129,28 @@ tasks:
             inputs:
               site: AGEFI
               type: /resource/list
-      - id: pianoOffer_beymedias
-        type: io.kestra.plugin.core.flow.Subflow
-        namespace:  null
-        flowId: BEYMEDIAS_PIANO_OFFER
+          - id: monitoring_api_ag_end
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/a9fefc0c-6a89-45dc-8a3f-6f9dbf2e73c3
+            method: GET
+      - id: pianoOffer
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: monitoring_offer_start
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/36ec4ee4-bcb2-458d-bbbb-3c21f01ca3ad/start
+            method: GET
+          - id: pianoOffer_beymedias
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: BEYMEDIAS_PIANO_OFFER
+          - id: monitoring_offer_end
+            type: io.kestra.plugin.core.http.Request
+            uri: https://healthchecks.rec.beymedias.com/ping/36ec4ee4-bcb2-458d-bbbb-3c21f01ca3ad
+            method: GET
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 3 * * *"
         

@@ -1,0 +1,34 @@
+id: UPDATE_MAGELLAN
+namespace: null
+
+tasks:
+  - id: Magellan_Sequential
+    type: io.kestra.plugin.core.flow.Sequential
+    tasks:
+      - id: start
+        type: io.kestra.plugin.core.log.Log
+        message: MAGELLAN task start        
+      - id: monitoring_start
+        type: io.kestra.plugin.core.http.Request
+        uri: https://healthchecks.rec.beymedias.com/ping/883fea2e-65f1-4ca5-9c29-0fb9f93379fc/start
+        method: GET
+        sslOptions:
+          insecureTrustAllCertificates: true
+      - id: magellan_flow
+        type: io.kestra.plugin.core.flow.Subflow
+        namespace:  null
+        flowId: MAGELLAN_TO_BIGQUERY
+      - id: monitoring_end
+        type: io.kestra.plugin.core.http.Request
+        uri: https://healthchecks.rec.beymedias.com/ping/883fea2e-65f1-4ca5-9c29-0fb9f93379fc
+        method: GET
+        sslOptions:
+          insecureTrustAllCertificates: true
+      - id: end
+        type: io.kestra.plugin.core.log.Log
+        message: MAGELLAN task end
+
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 2 * * 2-6"

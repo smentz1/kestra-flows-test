@@ -137,6 +137,7 @@ tasks:
       main("{{ outputs.piano_get_download.uri }}","{{ render(vars.report) }}",",")
 
   - id: import_in_bigquery
+    disabled: true
     description: import *.csv in raw_* tables
     type: io.kestra.plugin.scripts.node.Script
     script: |

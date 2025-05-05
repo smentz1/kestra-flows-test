@@ -52,6 +52,7 @@ tasks:
       main({{ outputs.download_SFTP_File }})
 
   - id: import_in_bigquery
+    disabled: false
     description: import *.csv in raw_* tables
     type: io.kestra.plugin.scripts.node.Script
     script: |
@@ -59,6 +60,7 @@ tasks:
       main('{{ fromJson(outputs.json_last_import.value).type }}', {{ outputs.clean_files.vars }}, {{ outputs.clean_files.outputFiles }})
   
   - id: only_if_daily
+    disabled: false
     type: io.kestra.plugin.core.flow.If
     condition: '{{ fromJson(outputs.json_last_import.value).type == "daily" }}'
     then:
@@ -70,6 +72,7 @@ tasks:
           main()
   
   - id: update_last_import
+    disabled: false
     type: io.kestra.plugin.gcp.bigquery.Query
     sql: |
       INSERT INTO `{{ vars.projectId }}.{{ vars.datasetId}}.log_import` (date, daily)

@@ -1,0 +1,59 @@
+triggers:
+  - id: schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 4 * * *"
+
+id: UPDATE_PIANO_AGEFI
+namespace: null
+
+tasks:
+      - id: pianoApi_agefi
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoApi_agefi_term
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: AGEFI
+              type: /term/list
+          - id: pianoApi_agefi_ressource
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_API_LIST
+            inputs:
+              site: AGEFI
+              type: /resource/list
+
+      - id: pianoReport_agefi
+        type: io.kestra.plugin.core.flow.Sequential
+        tasks:
+          - id: pianoReport_agefi_user
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: userExport
+          - id: pianoReport_agefi_transactions
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: transactionsReport
+          - id: pianoReport_agefi_access
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: accessReportExport
+          - id: pianoReport_agefi_subscription
+            type: io.kestra.plugin.core.flow.Subflow
+            namespace:  null
+            flowId: PIANO_FETCH_REPORT
+            inputs:
+              site: AGEFI
+              type: subscriptionLog
+disabled: true
